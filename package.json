@@ -1,0 +1,26 @@
+{
+  "name": "react-use-async-effect-state",
+  "version": "0.0.1",
+  "description": "A React hook that provides state that is safely driven with async effects.",
+  "license": "MIT",
+  "homepage": "https://github.com/icedevml/react-use-async-effect-state",
+  "main": "./lib.esm/index.js",
+  "module": "./lib.esm/index.js",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./lib.esm/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.6",
+    "typescript": "^5.5.3"
+  },
+  "peerDependencies": {
+    "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0"
+  },
+  "packageManager": "yarn@4.9.1"
+}
