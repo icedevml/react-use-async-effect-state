@@ -68,6 +68,7 @@ export function useAsyncEffectState<ReturnType>(
 
         (async () => {
             await Promise.resolve() // wait for the initial cleanup in Strict mode - avoids double mutation
+
             if (!isMounted.current || ignore) {
                 return
             }
@@ -81,6 +82,7 @@ export function useAsyncEffectState<ReturnType>(
                 const result = await onMount(() => (isMounted.current && !ignore))
 
                 if (isMounted.current && !ignore) {
+                    // onMount was successful and this effect is the most recent one, update result
                     setResultState((prevState) => ({
                         ...prevState,
                         initialized: true,
@@ -120,6 +122,7 @@ export function useAsyncEffectState<ReturnType>(
                     result: undefined,
                     error: error,
                 })
+
                 if (onError) {
                     onError(error)
                 }
@@ -129,7 +132,6 @@ export function useAsyncEffectState<ReturnType>(
         return () => {
             ignore = true
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, deps)
 
     return useMemo(() => ({
