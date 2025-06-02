@@ -7,21 +7,41 @@
 
 import {useEffect, useState, useMemo, useRef, type DependencyList} from 'react'
 
-interface IUseAsyncEffectResultNotReady {
+export class SkipEffect extends Error {
+    constructor() {
+        super()
+        this.name = "SkipEffect"
+        Object.setPrototypeOf(this, SkipEffect.prototype)
+    }
+}
+
+interface IUseAsyncEffectResultNotInitialized {
+    initialized: false
     ready: false
     result: unknown
     error: unknown
 }
 
-interface IUseAsyncEffectResultReady<ReturnType> {
-    ready: true
+interface IUseAsyncEffectResultInitialized<ReturnType> {
+    initialized: true
+    ready: boolean
     result: ReturnType
     error: undefined
 }
 
+interface IEnsureResultFunction<ReturnType> {
+    (): ReturnType
+}
+
+type TUseAsyncEffectState<ReturnType> =
+    IUseAsyncEffectResultNotInitialized
+    | IUseAsyncEffectResultInitialized<ReturnType>
+
 export type TUseAsyncEffectResult<ReturnType> =
-    IUseAsyncEffectResultNotReady
-    | IUseAsyncEffectResultReady<ReturnType>
+    TUseAsyncEffectState<ReturnType>
+    & {ensureResult: IEnsureResultFunction<ReturnType>}
+
+// TODO version that runs effects sequentially and skips ones that are not needed
 
 export function useAsyncEffectState<ReturnType>(
     onMount: (isMounted: () => boolean) => Promise<ReturnType>,
@@ -29,10 +49,11 @@ export function useAsyncEffectState<ReturnType>(
     deps?: DependencyList,
 ): TUseAsyncEffectResult<ReturnType> {
     const isMounted = useRef(false)
-    const [resultState, setResultState] = useState<TUseAsyncEffectResult<ReturnType>>({
-        ready: false,
-        result: undefined,
-        error: undefined
+    const [resultState, setResultState] = useState<TUseAsyncEffectState<ReturnType>>({
+        initialized: false, // whether result is present (could be stale!)
+        ready: false, // whether a fresh result is present
+        result: undefined, // last result that was recorded
+        error: undefined // last error that was recorded
     })
 
     useEffect(() => {
@@ -47,19 +68,61 @@ export function useAsyncEffectState<ReturnType>(
 
         (async () => {
             await Promise.resolve() // wait for the initial cleanup in Strict mode - avoids double mutation
+
             if (!isMounted.current || ignore) {
                 return
             }
-            setResultState({ready: false, result: undefined, error: undefined})
+
+            setResultState((prevState) => ({
+                ...prevState,
+                ready: false,
+            }))
+
             try {
                 const result = await onMount(() => (isMounted.current && !ignore))
 
                 if (isMounted.current && !ignore) {
-                    setResultState({ready: true, result: result, error: undefined})
+                    // onMount was successful and this effect is the most recent one, update result
+                    setResultState((prevState) => ({
+                        ...prevState,
+                        initialized: true,
+                        ready: true,
+                        result: result,
+                        error: undefined,
+                    }))
                 }
             } catch (error) {
-                if (!isMounted.current || ignore) return
-                setResultState({ready: false, result: undefined, error: error})
+                if (!isMounted.current || ignore) {
+                    return
+                }
+
+                if (error instanceof SkipEffect) {
+                    // the onMount() callback said that it doesn't want to alter the current state
+                    setResultState((prevState) => {
+                        if (prevState.initialized) {
+                            // declare previous cached result as fresh
+                            return {
+                                ...prevState,
+                                ready: true,
+                            }
+                        } else {
+                            // declare that we still didn't initialize yet
+                            return {
+                                ...prevState,
+                                ready: false,
+                            }
+                        }
+                    })
+                    return
+                }
+
+                setResultState({
+                    initialized: false,
+                    ready: false,
+                    result: undefined,
+                    error: error,
+                })
+
                 if (onError) {
                     onError(error)
                 }
@@ -69,10 +132,20 @@ export function useAsyncEffectState<ReturnType>(
         return () => {
             ignore = true
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, deps)
 
     return useMemo(() => ({
-        ...resultState
+        ...resultState,
+        ensureResult: () => {
+            if (resultState.error) {
+                throw resultState.error
+            } else if (!resultState.initialized) {
+                throw new Error("Unable to access effect's result - effect is not initialized.")
+            } else if (!resultState.ready) {
+                throw new Error("Unable to access effect's result - effect is not ready.")
+            }
+
+            return resultState.result
+        },
     }), [resultState])
 }
