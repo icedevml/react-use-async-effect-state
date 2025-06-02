@@ -139,8 +139,10 @@ export function useAsyncEffectState<ReturnType>(
         ensureResult: () => {
             if (resultState.error) {
                 throw resultState.error
-            } else if (!resultState.initialized || !resultState.ready) {
-                throw new Error("Result is not available.")
+            } else if (!resultState.initialized) {
+                throw new Error("Unable to access effect's result - effect is not initialized.")
+            } else if (!resultState.ready) {
+                throw new Error("Unable to access effect's result - effect is not ready.")
             }
 
             return resultState.result
